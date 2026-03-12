@@ -223,28 +223,37 @@ configure_wp() {
   cp "${WEBROOT}/wp-config-sample.php" "${WEBROOT}/wp-config.php"
 
   # Replace database credentials
-  sed -i "s/database_name_here/${DB_NAME}/"    "${WEBROOT}/wp-config.php"
-  sed -i "s/username_here/${DB_USER}/"          "${WEBROOT}/wp-config.php"
-  sed -i "s/password_here/${DB_PASS}/"          "${WEBROOT}/wp-config.php"
-  sed -i "s/localhost/localhost/"               "${WEBROOT}/wp-config.php"
+  sed -i "s/database_name_here/${DB_NAME}/"  "${WEBROOT}/wp-config.php"
+  sed -i "s/username_here/${DB_USER}/"        "${WEBROOT}/wp-config.php"
+  sed -i "s/password_here/${DB_PASS}/"        "${WEBROOT}/wp-config.php"
 
-  # Replace WordPress salts with fresh ones from the API
+  # ── Replace WordPress secret keys/salts (pure shell + sed) ──────────────────
   info "Fetching fresh WordPress secret keys..."
-  local salts
-  salts=$(curl -s "https://api.wordpress.org/secret-key/1.1/salt/")
-  # Remove existing placeholder salt block and insert fresh keys
-  php -r "
-    \$config = file_get_contents('${WEBROOT}/wp-config.php');
-    \$config = preg_replace(
-      '/\/\*\*#@\+\*\/.*?\/\*\*#@-\*\//s',
-      addslashes('${salts}'),
-      \$config
-    );
-    file_put_contents('${WEBROOT}/wp-config.php', \$config);
-  " 2>/dev/null || warn "Could not auto-replace salts. Update them manually at https://api.wordpress.org/secret-key/1.1/salt/"
+  local salt_file="/tmp/wp-salts-$$.txt"
+  curl -fsSL "https://api.wordpress.org/secret-key/1.1/salt/" -o "$salt_file" \
+    || error "Failed to download WordPress salts from the API."
 
-  # Set table prefix for slight obscurity
-  sed -i "s/\$table_prefix = 'wp_';/\$table_prefix = 'wp_';/" "${WEBROOT}/wp-config.php"
+  # The salt block in wp-config-sample.php is bounded by two markers:
+  #   /**#@+  (opening)   and   /**#@-*/  (closing)
+  # Strategy:
+  #   1. Print every line BEFORE the opening marker  (unchanged)
+  #   2. Print the fresh salt file contents
+  #   3. Skip every line from the opening marker through the closing marker
+  #   4. Continue printing the rest of the file
+  awk '
+    /\/\*\*#@\+/{          # hit opening marker → dump fresh salts, set skip=1
+      while ((getline line < "'"$salt_file"'") > 0) print line
+      skip=1; next
+    }
+    skip && /\/\*\*#@-/{  # hit closing marker → stop skipping
+      skip=0; next
+    }
+    !skip                  # print all non-skipped lines
+  ' "${WEBROOT}/wp-config.php" > /tmp/wp-config-$$.php \
+    && mv /tmp/wp-config-$$.php "${WEBROOT}/wp-config.php"
+
+  rm -f "$salt_file"
+  success "WordPress secret keys injected."
 
   success "wp-config.php configured."
 }
@@ -313,6 +322,19 @@ run_wp_install() {
   success "WordPress core installed successfully."
 }
 
+# ── Install required plugins via WP-CLI ───────────────────────────────────────
+install_plugins() {
+  info "Installing plugins..."
+
+  # temporary-login-without-password — lets you create passwordless admin links
+  sudo -u www-data wp plugin install temporary-login-without-password \
+    --activate \
+    --path="${WEBROOT}" \
+    --allow-root
+
+  success "Plugins installed and activated."
+}
+
 # ── Final summary ─────────────────────────────────────────────────────────────
 print_summary() {
   echo
@@ -346,6 +368,7 @@ main() {
   install_wp_cli
   configure_wp
   run_wp_install
+  install_plugins
   set_permissions
   print_summary
 }
