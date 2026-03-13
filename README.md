@@ -32,13 +32,22 @@ A single shell script that fully automates WordPress installation on **Ubuntu / 
 
 ## 🛠️ Installation
 
+### ⚡ One-liner (recommended for VPS)
+
+SSH into your server and run:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/sakawsar/auto-vps-wp-install/main/install.sh)
+```
+
+> Requires `curl`. Most Ubuntu/Debian servers have it pre-installed. Run as **root** or prefix with `sudo`.
+
+### 📦 Manual install
+
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/wp-install.git
-cd wp-install
-
-# Make the script executable
-chmod +x install.sh
+git clone https://github.com/sakawsar/auto-vps-wp-install.git
+cd auto-vps-wp-install
 
 # Run as root
 sudo bash install.sh
