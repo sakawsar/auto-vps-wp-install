@@ -338,18 +338,6 @@ run_wp_install() {
   success "WordPress core installed successfully."
 }
 
-# ── Install required plugins via WP-CLI ───────────────────────────────────────
-install_plugins() {
-  info "Installing plugins..."
-
-  # temporary-login-without-password — lets you create passwordless admin links
-  sudo -u www-data wp plugin install temporary-login-without-password \
-    --activate \
-    --path="${WEBROOT}" \
-    --allow-root
-
-  success "Plugins installed and activated."
-}
 
 # ── Final summary ─────────────────────────────────────────────────────────────
 # ── Per-domain summary (accumulated into INSTALL_SUMMARY) ────────────────────
@@ -403,7 +391,6 @@ main() {
     setup_database
     configure_wp
     run_wp_install
-    install_plugins
     set_permissions
     record_summary
   done

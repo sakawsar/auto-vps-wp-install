@@ -13,7 +13,6 @@ A single shell script that fully automates WordPress installation on **Ubuntu / 
 - ⚙️ **NGINX config** — copies your placeholder config and substitutes domain/webroot tokens
 - 🔑 **Fresh secret keys** — pulls live salts from the WordPress API and injects them via `awk`
 - 🔐 **Hardened permissions** — applies production-ready file/folder permissions
-- 🧩 **Plugins** — installs and activates [Temporary Login Without Password](https://wordpress.org/plugins/temporary-login-without-password/)
 - ✅ **Full summary** — prints Admin URL, credentials and DB info for every site after install
 
 ---
@@ -128,8 +127,7 @@ server {
 6. │ Create MySQL DB      — database + dedicated user per domain         │
 7. │ Configure wp-config  — DB credentials + fresh secret keys via awk  │
 8. │ Install WordPress    — wp core install via WP-CLI                   │
-9. │ Install plugins      — temporary-login-without-password             │
-10.│ Set permissions      — hardened ownership and chmod                 │
+9. │ Set permissions      — hardened ownership and chmod                 │
    └────────────────────────────────────────────────────────────────────┘
 11. Print summary         — Admin URL, username, password for each site
 ```
@@ -177,7 +175,6 @@ curl  unzip  certbot  python3-certbot-nginx  wget
 [OK]    Database and user created.
 [OK]    WordPress secret keys injected.
 [OK]    WordPress core installed successfully.
-[OK]    Plugins installed and activated.
 [OK]    File permissions applied.
 
 ══════════════════════════════════════════════════════
