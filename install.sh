@@ -49,31 +49,47 @@ collect_inputs() {
   echo -e "${BOLD}${CYAN}   WordPress Automated Installer           ${RESET}"
   echo -e "${BOLD}${CYAN}══════════════════════════════════════════${RESET}\n"
 
-  prompt DOMAIN        "Domain name (e.g. example.com)"
+  prompt DOMAINS_RAW   "Domain name(s) — comma-separated for multiple (e.g. example.com,blog.example.com)"
   prompt ADMIN_EMAIL   "WordPress admin email"
   prompt ADMIN_USER    "WordPress admin username"
   prompt ADMIN_PASS    "WordPress admin password" true
-  prompt DB_NAME       "MySQL database name"
-  prompt DB_PASS       "MySQL database password" true
+  prompt DB_PASS       "MySQL database password (shared across all sites)" true
 
-  # Derive safe identifiers
-  DB_USER="${DB_NAME}_user"
-  WEBROOT="/var/www/${DOMAIN}"
-  NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
-  NGINX_LINK="/etc/nginx/sites-enabled/${DOMAIN}"
+  # Build the domain array (trim whitespace around each entry)
+  IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS_RAW"
+  DOMAIN_LIST=( $(printf '%s\n' "${DOMAIN_LIST[@]}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') )
 
   echo
   echo -e "${BOLD}Review your settings:${RESET}"
-  echo -e "  Domain        : ${GREEN}${DOMAIN}${RESET}"
-  echo -e "  Web root      : ${GREEN}${WEBROOT}${RESET}"
   echo -e "  Admin email   : ${GREEN}${ADMIN_EMAIL}${RESET}"
   echo -e "  Admin user    : ${GREEN}${ADMIN_USER}${RESET}"
-  echo -e "  Database name : ${GREEN}${DB_NAME}${RESET}"
-  echo -e "  Database user : ${GREEN}${DB_USER}${RESET}"
+  echo -e "  Sites to install:"
+  for d in "${DOMAIN_LIST[@]}"; do
+    local _db
+    _db=$(domain_to_dbname "$d")
+    echo -e "    ${CYAN}•${RESET} ${GREEN}${d}${RESET}  →  webroot: /var/www/${d}  |  db: ${_db}  |  db_user: ${_db}_user"
+  done
   echo
 
   read -rp "${BOLD}Proceed with installation? [y/N]:${RESET} " confirm
   [[ "$confirm" =~ ^[Yy]$ ]] || error "Installation cancelled by user."
+}
+
+# ── Derive a safe MySQL identifier from a domain name ─────────────────────────
+# Replaces dots and hyphens with underscores and limits to 64 chars
+domain_to_dbname() {
+  echo "${1//[.-]/_}" | cut -c1-64
+}
+
+# ── Set per-domain global variables ──────────────────────────────────────────
+derive_domain_vars() {
+  local domain="$1"
+  DOMAIN="$domain"
+  WEBROOT="/var/www/${DOMAIN}"
+  NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
+  NGINX_LINK="/etc/nginx/sites-enabled/${DOMAIN}"
+  DB_NAME=$(domain_to_dbname "$domain")
+  DB_USER="${DB_NAME}_user"
 }
 
 # ── Install system packages ───────────────────────────────────────────────────
@@ -336,22 +352,33 @@ install_plugins() {
 }
 
 # ── Final summary ─────────────────────────────────────────────────────────────
+# ── Per-domain summary (accumulated into INSTALL_SUMMARY) ────────────────────
+INSTALL_SUMMARY=()
+
+record_summary() {
+  INSTALL_SUMMARY+=(
+    "${BOLD}${CYAN}── ${DOMAIN} ──────────────────────────────────────────${RESET}"
+    "  ${BOLD}Site URL    :${RESET} https://${DOMAIN}"
+    "  ${BOLD}Admin URL   :${RESET} ${CYAN}https://${DOMAIN}/wp-admin${RESET}"
+    "  ${BOLD}Username    :${RESET} ${GREEN}${ADMIN_USER}${RESET}"
+    "  ${BOLD}Password    :${RESET} ${GREEN}${ADMIN_PASS}${RESET}"
+    "  ${BOLD}Admin Email :${RESET} ${GREEN}${ADMIN_EMAIL}${RESET}"
+    "  ${BOLD}Web Root    :${RESET} ${WEBROOT}"
+    "  ${BOLD}NGINX Config:${RESET} ${NGINX_CONF}"
+    "  ${BOLD}Database    :${RESET} ${DB_NAME} (user: ${DB_USER})"
+    ""
+  )
+}
+
 print_summary() {
   echo
   echo -e "${BOLD}${GREEN}══════════════════════════════════════════════════════${RESET}"
   echo -e "${BOLD}${GREEN}   ✅  WordPress Installation Complete!               ${RESET}"
   echo -e "${BOLD}${GREEN}══════════════════════════════════════════════════════${RESET}"
   echo
-  echo -e "  ${BOLD}Site URL     :${RESET} https://${DOMAIN}"
-  echo -e "  ${BOLD}Admin URL    :${RESET} ${CYAN}https://${DOMAIN}/wp-admin${RESET}"
-  echo -e "  ${BOLD}Username     :${RESET} ${GREEN}${ADMIN_USER}${RESET}"
-  echo -e "  ${BOLD}Password     :${RESET} ${GREEN}${ADMIN_PASS}${RESET}"
-  echo -e "  ${BOLD}Admin Email  :${RESET} ${GREEN}${ADMIN_EMAIL}${RESET}"
-  echo
-  echo -e "  ${BOLD}Web Root     :${RESET} ${WEBROOT}"
-  echo -e "  ${BOLD}NGINX Config :${RESET} ${NGINX_CONF}"
-  echo -e "  ${BOLD}Database     :${RESET} ${DB_NAME} (user: ${DB_USER})"
-  echo
+  for line in "${INSTALL_SUMMARY[@]}"; do
+    echo -e "$line"
+  done
   echo -e "${YELLOW}  ⚠  Keep your credentials safe and remove this script if storing in a public repo.${RESET}"
   echo
 }
@@ -360,16 +387,27 @@ print_summary() {
 main() {
   require_root
   collect_inputs
-#   install_packages
-  install_wordpress_files
-  configure_nginx
-  install_ssl
-  setup_database
+# install_packages
   install_wp_cli
-  configure_wp
-  run_wp_install
-  install_plugins
-  set_permissions
+
+  for raw_domain in "${DOMAIN_LIST[@]}"; do
+    derive_domain_vars "$raw_domain"
+
+    echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "${BOLD}${CYAN}  Installing: ${DOMAIN}${RESET}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+
+    install_wordpress_files
+    configure_nginx
+    install_ssl
+    setup_database
+    configure_wp
+    run_wp_install
+    install_plugins
+    set_permissions
+    record_summary
+  done
+
   print_summary
 }
 
